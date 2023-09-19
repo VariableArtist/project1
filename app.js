@@ -13,10 +13,7 @@ AWS.config.update({
 
 const docClient = new AWS.DynamoDB.DocumentClient();
 
-let users = [{ username: "user1", password: "pass1", role: "employee" }, { username: "user2", password: "pass2", role: "manager" }, { username: "user3", password: "pass3", role: "employee" }];
-
-let tickets = [{ amount: 0.00, description: "blah", status: "pending", date: new Date().toLocaleDateString() }];
-
+let loggedInUser = null;
 
 const server = http.createServer((req, res) => {
 
@@ -32,7 +29,7 @@ const server = http.createServer((req, res) => {
                 console.log(err);
             });
     }
-    // POST request for a new user using body raw JSON in postman
+    // POST request for adding a new user using body raw JSON in postman
     else if (req.method === 'POST' && req.url === '/register') {
 
         let body = '';
@@ -54,10 +51,6 @@ const server = http.createServer((req, res) => {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ message: 'You need to type in a username and Password!' }));
             }
-            // else if (checkForDuplicateUsernames(data.username)) {
-            //     res.writeHead(400, { 'Content-Type': 'application/json' });
-            //     res.end(JSON.stringify({ message: 'That user already exists!', current: users }));
-            // }
             else {
                 getUsersWithUserName(data.username).then((userNameData) => {
                     // console.log(data);
@@ -84,6 +77,48 @@ const server = http.createServer((req, res) => {
             }
         });
     }
+    // GET request for who is logged in
+    // POST request for loging in
+    else if (req.method === 'POST' && req.url === '/login') {
+        let body = '';
+        req.on('data', (chunk) => {
+            body += chunk;
+        });
+
+        req.on('end', () => {
+            const data = JSON.parse(body);
+
+
+            if ((data.username == null) || (data.password == null)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'It does not have a username and password property!' }));
+            }
+            else if ((data.username == "") || (data.password == "")) {
+                // console.log((JSON.stringify(data.username)));
+                // console.log((JSON.stringify(data.password)));
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: 'You need to type in a username and Password!' }));
+            }
+            else {
+                getUsersWithUsernameAndPassword(data.username, data.password)
+                    .then((data) => {
+                        console.log(data);
+                        if (data.Count > 0) {
+                            res.writeHead(200, { 'Content-Type': 'application/json', 'User-Logged-In': "RENAME-LATER" });
+                            res.end(JSON.stringify({ message: "Welcome User" }));
+                        }
+                        else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: "User with that password does not exist" }));
+                        }
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                    });
+            }
+        })
+    }
+    // GET request for showing all the tickets
     else if (req.method === 'GET' && req.url === '/tickets/show') {
         getAllTickets()
             .then((data) => {
@@ -95,6 +130,7 @@ const server = http.createServer((req, res) => {
                 console.log(err);
             });
     }
+    // POST request for adding new tickets
     else if (req.method === 'POST' && req.url === '/tickets/new') {
 
         let body = '';
@@ -168,6 +204,44 @@ function getUsersWithUserName(username) {
         ExpressionAttributeValues: {
             ':value': username
         },
+    }
+
+    return docClient.scan(params).promise();
+}
+
+// getUsersWithPassword("pass1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getUsersWithPassword(password) {
+    const params = {
+        TableName: 'users',
+        FilterExpression: '#c = :value',
+        ExpressionAttributeNames: {
+            '#c': 'password'
+        },
+        ExpressionAttributeValues: {
+            ':value': password
+        },
+    }
+
+    return docClient.scan(params).promise();
+}
+
+// getUsersWithUsernameAndPassword("user1", "pass1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getUsersWithUsernameAndPassword(username, password) {
+    const params = {
+        TableName: 'users',
+        FilterExpression: '#c = :value AND #p = :value2',
+        ExpressionAttributeNames: {
+            '#c': 'username',
+            '#p': 'password'
+
+        },
+        ExpressionAttributeValues: {
+            ':value': username,
+            ':value2': password
+        },
+        limit: 1
     }
 
     return docClient.scan(params).promise();
