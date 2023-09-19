@@ -1,0 +1,15 @@
+{
+  "name": "project1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Treven Persing",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1459.0",
+    "winston": "^3.10.0"
+  }
+}
