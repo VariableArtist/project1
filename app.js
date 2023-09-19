@@ -1,26 +1,36 @@
-const { createLogger, transports, format } = require('winston');
+const { createLogger, transports, format, error } = require('winston');
 const http = require('http');
 const AWS = require('aws-sdk');
+const uuid = require('uuid');
 
 const port = 3000;
+
+AWS.config.update({
+
+    region: 'us-east-1'
+
+});
+
+const docClient = new AWS.DynamoDB.DocumentClient();
 
 let users = [{ username: "user1", password: "pass1", role: "employee" }, { username: "user2", password: "pass2", role: "manager" }, { username: "user3", password: "pass3", role: "employee" }];
 
 let tickets = [{ amount: 0.00, description: "blah", status: "pending", date: new Date().toLocaleDateString() }];
 
 
-
 const server = http.createServer((req, res) => {
 
     // GET request for all users
     if (req.method === 'GET' && req.url === '/users') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        const data = {
-            message: "Now displaying users",
-            users
-        };
-        res.end(JSON.stringify({ data, current: users }));
-        showAllUsers();
+        getAllUsers()
+            .then((data) => {
+                console.log(data);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: "Now displaying users", data }));
+            })
+            .catch((err) => {
+                console.log(err);
+            });
     }
     // POST request for a new user using body raw JSON in postman
     else if (req.method === 'POST' && req.url === '/register') {
@@ -44,26 +54,48 @@ const server = http.createServer((req, res) => {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ message: 'You need to type in a username and Password!' }));
             }
-            else if (checkForDuplicateUsernames(users, data)) {
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'That user already exists!', current: users }));
-                showAllUsers();
-            }
+            // else if (checkForDuplicateUsernames(data.username)) {
+            //     res.writeHead(400, { 'Content-Type': 'application/json' });
+            //     res.end(JSON.stringify({ message: 'That user already exists!', current: users }));
+            // }
             else {
-                users = registerNewUser(data, users);
-
-                console.log("New user...");
-                console.log(data);
-                console.log("created!");
-
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Added a new user", current: users }));
-                showAllUsers();
+                getUsersWithUserName(data.username).then((userNameData) => {
+                    // console.log(data);
+                    if (userNameData.Count == 0) {
+                        registerNewUser(uuid.v4(), data.username, data.password)
+                            .then((newUserData) => {
+                                console.log("Made New User!");
+                                console.log(newUserData);
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ message: "Added a new user!" }));
+                            })
+                            .catch((err) => {
+                                console.log(err);
+                            });
+                    }
+                    else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: "User Already Exists!" }));
+                    }
+                })
+                    .catch((err) => {
+                        console.log(err);
+                    })
             }
-
         });
     }
-    else if (req.method === 'POST' && req.url === '/ticket') {
+    else if (req.method === 'GET' && req.url === '/tickets/show') {
+        getAllTickets()
+            .then((data) => {
+                console.log(data);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: "Now displaying tickets", data }));
+            })
+            .catch((err) => {
+                console.log(err);
+            });
+    }
+    else if (req.method === 'POST' && req.url === '/tickets/new') {
 
         let body = '';
         req.on('data', (chunk) => {
@@ -85,15 +117,19 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ message: 'You need to type in an amount and a description' }));
             }
             else {
-                tickets = addNewTicket(data, tickets);
+                addNewTicket(uuid.v4(), data.amount, data.description)
+                    .then((data) => {
+                        console.log(data);
+                        console.log("New ticket created!");
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: "Added a new ticket" }));
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                    });
 
-                console.log("New ticket...");
-                console.log(data);
-                console.log("created!");
 
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Added a new ticket", current: tickets }));
-                showAllUsers();
+
             }
 
         });
@@ -113,79 +149,115 @@ server.listen(port, () => {
     console.log(`Server is listening on port http://localhost:${port}`);
 })
 
-function showAllUsers() {
-    //need at least 1 element for the foreach loop to work.
-    users.forEach(element => {
-        console.log(element);
-    });
-    // console.log(users);
+
+function getAllUsers() {
+    const params = {
+        TableName: 'users'
+    }
+
+    return docClient.scan(params).promise();
 }
 
-function registerNewUser(body, array) {
-    body.role = "employee";
-    array.push(body);
-    return array;
+function getUsersWithUserName(username) {
+    const params = {
+        TableName: 'users',
+        FilterExpression: '#c = :value',
+        ExpressionAttributeNames: {
+            '#c': 'username'
+        },
+        ExpressionAttributeValues: {
+            ':value': username
+        },
+    }
+
+    return docClient.scan(params).promise();
 }
 
-function addNewTicket(body, array) {
+function registerNewUser(user_id, username, password) {
+    const params = {
+        TableName: 'users',
+        Item: {
+            username,
+            password,
+            role: 'employee',
+            user_id
+        }
+    }
+
+    return docClient.put(params).promise();
+}
+
+// getAllTickets().then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getAllTickets() {
+    const params = {
+        TableName: 'tickets'
+    }
+
+    return docClient.scan(params).promise();
+}
+
+// addNewTicket(uuid.v4(), 50.0, "none").then((data) => { console.log(data); }).catch((err) => { console.log(err); });;
+
+function addNewTicket(ticket_id, amount, description) {
+    const params = {
+        TableName: 'tickets',
+        Item: {
+            ticket_id,
+            amount,
+            description,
+            status: "pending",
+            date: new Date().toLocaleDateString()
+        }
+    }
+
+    return docClient.put(params).promise();
+}
+
+function addNewTicketV1(body, array) {
     body.role = "pending";
     body.date = new Date().toLocaleDateString();
     array.push(body);
     return array;
 }
 
+
+// console.log(checkForDuplicateUsernames("user3"));
+
+function checkForDuplicateUsernames(username) {
+    result = false;
+
+    let holdingData = getUsersWithUserName(username).then((data) => {
+        console.log(data);
+        // console.log(data.Count);
+        // if (data) {
+        //     console.log("Found a duplicate!");
+        //     result = true;
+        //     return true;
+        // }
+        // else {
+        //     console.log("No duplicate!");
+        //     return false;
+        // }
+    })
+        .catch((err) => {
+            console.log(err);
+        });
+
+    console.log(holdingData);
+
+    return result;
+
+    // array.forEach(element => {
+    //     // console.log(JSON.stringify(element.username) + "V.S." + JSON.stringify(data.username));
+    //     // console.log(JSON.stringify(element.username) == JSON.stringify(data.username));
+    //     if (JSON.stringify(element.username) == JSON.stringify(data.username)) {
+    //         result = true;
+    //     }
+    // });
+
+}
+
 function test() {
     console.log("hello world");
 }
-
-function checkForDuplicateUsernames(array, data) {
-    result = false;
-
-    array.forEach(element => {
-        // console.log(JSON.stringify(element.username) + "V.S." + JSON.stringify(data.username));
-        // console.log(JSON.stringify(element.username) == JSON.stringify(data.username));
-        if (JSON.stringify(element.username) == JSON.stringify(data.username)) {
-            result = true;
-        }
-    });
-
-    // Test Code to use outside this function
-    // console.log(checkForDuplicateUsernames(users, {
-    //     username: "user4",
-    //     password: "pass2"
-    // }))
-
-    return result;
-}
-
-//#region
-// Database Connection (Currently Works)
-// // set your aws region
-
-// AWS.config.update({
-
-//     region: 'us-east-1'
-
-// });
-
-// // create a dynamoDB client
-
-// const dynamoDB = new AWS.DynamoDB();
-
-// // print a list of the tables
-
-// dynamoDB.listTables({}, (err, data) => {
-
-//     if (err) {
-
-//         console.error('Error', err);
-
-//     } else {
-
-//         console.log('Tables:', data.TableNames);
-
-//     }
-
-// });
-
-//#endregionendregion
