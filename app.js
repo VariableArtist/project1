@@ -9,6 +9,7 @@ const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const Promise = require('bluebird');
 const { Console } = require('winston/lib/winston/transports');
+const dao = require('./utility/appDao');
 
 const port = 3000;
 
@@ -19,6 +20,9 @@ AWS.config.update({
 });
 
 const docClient = new AWS.DynamoDB.DocumentClient();
+
+
+// Table of Features ----------------------------------------------------------
 
 // GENERAL FEATURES:
 // -Test
@@ -33,10 +37,14 @@ const docClient = new AWS.DynamoDB.DocumentClient();
 
 // MANAGER FEATURES:
 // -Show all pending tickets
+// -Show all previous tickets
 // -Search and find a specific ticket
 // -Update a pending ticket and post result to the previous ticket table
 // -Delete a ticket 
 // -Update a users role
+
+// --------------------------------------------------------------------------
+
 
 // (GENERAL FEATURE): Test
 // GET request for testing connection
@@ -47,7 +55,7 @@ app.get('/', (req, res) => {
 // (GENERAL FEATURE): Show all users
 // GET request for all users
 app.get('/users', (req, res) => {
-    getAllUsers()
+    dao.getAllUsers()
         .then((data) => {
             console.log(data);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -61,8 +69,6 @@ app.get('/users', (req, res) => {
 // (GENERAL FEATURE): Register a new user
 // POST request for adding a new user using body raw JSON in postman 
 app.post('/register', (req, res) => {
-
-    console.log("REGISTERING");
 
     let body = '';
     req.on('data', (chunk) => {
@@ -84,10 +90,10 @@ app.post('/register', (req, res) => {
             res.end(JSON.stringify({ message: 'You need to type in a username and Password!' }));
         }
         else {
-            getUsersWithUserName(data.username).then((userNameData) => {
+            dao.getUsersWithUserName(data.username).then((userNameData) => {
                 // console.log(data);
                 if (userNameData.Count == 0) {
-                    registerNewUser(uuid.v4(), data.username, data.password)
+                    dao.registerNewUser(uuid.v4(), data.username, data.password)
                         .then((newUserData) => {
                             console.log("Made New User!");
                             console.log(newUserData);
@@ -105,62 +111,10 @@ app.post('/register', (req, res) => {
             })
                 .catch((err) => {
                     console.log(err);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: "Could not make new user." }));
                 })
         }
-    });
-});
-
-// (MANAGER FEATURE): Update user role
-// PUT request for updating a users role
-app.put('/user/change/role', (req, res) => {
-
-    const requestUrl = req.query;
-    console.log(requestUrl.id);
-
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
-    req.on('end', () => {
-        const data = JSON.parse(body);
-
-        const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
-        verifyTokenAndReturnPayload(token)
-            .then((tokenData) => {
-                if (tokenData.role === 'manager') {
-                    if ((data.role == null)) {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ message: 'It does not have a role property!' }));
-                    }
-                    else if ((data.role == "")) {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ message: 'You need to type in a role!' }));
-                    }
-                    else if ((data.role == "employee") || (data.role == "manager")) {
-                        updateUserRole(requestUrl.id, data.role).then((updateUserRoleData) => {
-                            console.log(updateUserRoleData);
-                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify({ message: `Changed role to ${data.role}.` }));
-                        })
-                            .catch((err) => {
-                                console.log(err);
-                            })
-                    }
-                    else {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ message: 'The role is not an employee or manager!' }));
-                    }
-
-                }
-                else {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ message: `You are not a manager you are a / an ${tokenData.role}` }));
-                }
-            }).catch((err) => {
-
-            });
-
     });
 });
 
@@ -190,7 +144,7 @@ app.post('/login', (req, res) => {
             res.end(JSON.stringify({ message: 'You need to type in a username and Password!' }));
         }
         else {
-            getUsersWithUsernameAndPassword(data.username, data.password)
+            dao.getUsersWithUsernameAndPassword(data.username, data.password)
                 .then((userNameData) => {
                     console.log(userNameData);
                     if (userNameData.Count > 0) {
@@ -213,35 +167,83 @@ app.post('/login', (req, res) => {
     });
 });
 
-// (MANGAER FEATURE): Show all pending tickets
-// GET request for showing all the tickets 
-app.get('/tickets/show', (req, res) => {
+// (EMPLOYEE FEATURE): Make a new ticket
+// POST request for adding new tickets 
+app.post('/tickets/new', (req, res) => {
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
 
-    const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
-    verifyTokenAndReturnPayload(token)
-        .then((tokenData) => {
-            if (tokenData.role === 'manager') {
-                getAllTickets()
-                    .then((data) => {
-                        console.log(data);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ message: "Now displaying current tickets", data }));
-                    })
-                    .catch((err) => {
-                        console.log(err);
-                    });
-            }
-            else {
+    req.on('end', () => {
+        // console.log((JSON.stringify(data.amount)));
+        // console.log((JSON.stringify(data.description)));
+        const data = JSON.parse(body);
+
+        const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
+        verifyTokenAndReturnPayload(token)
+            .then((tokenData) => {
+                console.log(tokenData);
+                if (tokenData.role != 'employee') {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: `You are not an employee, you are a/an ${tokenData.role}` }));
+                }
+                else if ((data.amount == null) || (data.description == null)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: 'It does not have an amount and description property!' }));
+                }
+                else if ((data.amount == "") || (data.description == "")) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: 'You need to type in an amount and a description' }));
+                }
+                else {
+                    let type = "n/a"
+                    if (data.type != null || data.type != "") {
+                        type = data.type;
+                    }
+
+                    const newID = uuid.v4()
+                    dao.addNewTicket(newID, data.amount, data.description, tokenData.username, type)
+                        .then((newTicketData) => {
+                            newDATA = newTicketData;
+                            console.log(newTicketData);
+                            console.log("New ticket created!");
+
+                            dao.getTicketByID(newID)
+                                .then((getTicketByIDdata) => {
+                                    console.log(getTicketByIDdata)
+                                    dao.moveTicketToTable('tickets_previous', getTicketByIDdata.Item)
+                                        .then((moveTicketToTableData) => {
+                                            console.log(moveTicketToTableData);
+                                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                                            res.end(JSON.stringify({
+                                                message: "Added a new ticket",
+                                                message2: "A Copy has been sent to the previous tickets table."
+                                            }));
+                                        })
+                                        .catch((err) => { console.log(err); });
+                                })
+                                .catch((err) => {
+                                    console.log(err);
+                                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                                    res.end(JSON.stringify({ message: 'Failed to identify newly added ticket!' }));
+                                })
+                        })
+                        .catch((err) => {
+                            console.log(err);
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: 'Failed to add new ticket!' }));
+                        });
+
+                }
+            })
+            .catch((err) => {
+                console.log(err);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: `You are not a manager, you are a / an ${tokenData.role}` }));
-            }
-        })
-        .catch((err) => {
-            console.log(err);
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
-        })
+                res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
+            });
 
+    });
 });
 
 // (EMPLOYEE FEATURE): Show an employee's previous tickets
@@ -260,7 +262,7 @@ app.get('/tickets/previous/employee', (req, res) => {
         verifyTokenAndReturnPayload(token)
             .then((tokenData) => {
                 if (tokenData.role === 'employee') {
-                    getTicketsWithUsername(tokenData.username)
+                    dao.getTicketsWithUsername(tokenData.username)
                         .then((ticketUsernameData) => {
                             console.log(ticketUsernameData);
                             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -298,7 +300,7 @@ app.get('/tickets/previous/employee/type', (req, res) => {
             console.log(tokenData.username);
             console.log(requestUrl.type);
             if (tokenData.role === 'employee') {
-                getPreviousTicketsWithUsernameAndType(tokenData.username, requestUrl.type)
+                dao.getPreviousTicketsWithUsernameAndType(tokenData.username, requestUrl.type)
                     .then((ticketUsernameData) => {
                         console.log(ticketUsernameData);
                         if (ticketUsernameData.Count > 0) {
@@ -327,6 +329,37 @@ app.get('/tickets/previous/employee/type', (req, res) => {
 
 });
 
+// (MANGAER FEATURE): Show all pending tickets
+// GET request for showing all the tickets 
+app.get('/tickets/show', (req, res) => {
+
+    const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
+    verifyTokenAndReturnPayload(token)
+        .then((tokenData) => {
+            if (tokenData.role === 'manager') {
+                dao.getAllTickets()
+                    .then((data) => {
+                        console.log(data);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: "Now displaying current tickets", data }));
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                    });
+            }
+            else {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: `You are not a manager, you are a / an ${tokenData.role}` }));
+            }
+        })
+        .catch((err) => {
+            console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
+        })
+
+});
+
 // (MANAGER FEATURE): Show all previous tickets
 app.get('/tickets/previous/all', (req, res) => {
     const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
@@ -334,7 +367,7 @@ app.get('/tickets/previous/all', (req, res) => {
     verifyTokenAndReturnPayload(token)
         .then((tokenData) => {
             if (tokenData.role === 'manager') {
-                getAllTicketsFromTable('tickets_previous')
+                dao.getAllTicketsFromTable('tickets_previous')
                     .then((data) => {
                         console.log(data);
                         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -367,7 +400,7 @@ app.get('/tickets/find', (req, res) => {
     verifyTokenAndReturnPayload(token)
         .then((tokenData) => {
             if (tokenData.role === 'manager') {
-                getTicketsWithID(requestUrl.id)
+                dao.getTicketsWithID(requestUrl.id)
                     .then((getTicketByIDdata) => {
                         console.log(getTicketByIDdata);
                         if (getTicketByIDdata.Count > 0) {
@@ -381,6 +414,8 @@ app.get('/tickets/find', (req, res) => {
                     })
                     .catch((err) => {
                         console.log(err);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: `Failed to find ticket(s) with ID` }));
                     });
             }
             else if (requestUrl == null || requestUrl.id == null || requestUrl.id == "") {
@@ -431,26 +466,26 @@ app.put('/tickets/update', (req, res) => {
                     res.end(JSON.stringify({ message: 'No "approved" or "denied" Status Writen' }));
                 }
                 else if (data.status == "approved" || data.status == "denied") {
-                    getTicketsWithID(requestUrl.id)
+                    dao.getTicketsWithID(requestUrl.id)
                         .then((getTicketWithIDdata) => {
                             if (getTicketWithIDdata.Count > 0) {
                                 console.log(getTicketWithIDdata)
 
                                 getTicketWithIDdata.Items[0].status = data.status;
 
-                                moveTicketToTable('tickets_approved_denied', getTicketWithIDdata.Items[0])
+                                dao.moveTicketToTable('tickets_approved_denied', getTicketWithIDdata.Items[0])
                                     .then((data) => { console.log(data); })
                                     .catch((err) => { console.log(err); });
 
-                                deleteTicketByIdInTable('tickets_previous', requestUrl.id)
+                                dao.deleteTicketByIdInTable('tickets_previous', requestUrl.id)
                                     .then((data) => { console.log(data); })
                                     .catch((err) => { console.log(err); });
 
-                                moveTicketToTable('tickets_previous', getTicketWithIDdata.Items[0])
+                                dao.moveTicketToTable('tickets_previous', getTicketWithIDdata.Items[0])
                                     .then((data) => { console.log(data); })
                                     .catch((err) => { console.log(err); });
 
-                                deleteTicketById(requestUrl.id)
+                                dao.deleteTicketById(requestUrl.id)
                                     .then((data) => { console.log(data); })
                                     .catch((err) => { console.log(err); });
 
@@ -465,6 +500,8 @@ app.put('/tickets/update', (req, res) => {
                         })
                         .catch((err) => {
                             console.log(err);
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: 'Failed to find ticket(s) with ID!' }));
                         });
                 }
                 else {
@@ -477,91 +514,11 @@ app.put('/tickets/update', (req, res) => {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
             });
-
-
-
     })
 
 });
 
-// (EMPLOYEE FEATURE): Make a new ticket
-// POST request for adding new tickets 
-app.post('/tickets/new', (req, res) => {
-    let body = '';
-    req.on('data', (chunk) => {
-        body += chunk;
-    });
-
-    req.on('end', () => {
-        // console.log((JSON.stringify(data.amount)));
-        // console.log((JSON.stringify(data.description)));
-        const data = JSON.parse(body);
-
-        const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
-        verifyTokenAndReturnPayload(token)
-            .then((tokenData) => {
-                console.log(tokenData);
-                if (tokenData.role != 'employee') {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ message: `You are not an employee, you are a/an ${tokenData.role}` }));
-                }
-                else if ((data.amount == null) || (data.description == null)) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ message: 'It does not have an amount and description property!' }));
-                }
-                else if ((data.amount == "") || (data.description == "")) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ message: 'You need to type in an amount and a description' }));
-                }
-                else {
-                    let type = "n/a"
-                    if (data.type != null || data.type != "") {
-                        type = data.type;
-                    }
-
-                    const newID = uuid.v4()
-                    addNewTicket(newID, data.amount, data.description, tokenData.username, type)
-                        .then((newTicketData) => {
-                            newDATA = newTicketData;
-                            console.log(newTicketData);
-                            console.log("New ticket created!");
-
-                            getTicketByID(newID)
-                                .then((getTicketByIDdata) => {
-                                    console.log(getTicketByIDdata)
-                                    moveTicketToTable('tickets_previous', getTicketByIDdata.Item)
-                                        .then((moveTicketToTableData) => {
-                                            console.log(moveTicketToTableData);
-                                            res.writeHead(200, { 'Content-Type': 'application/json' });
-                                            res.end(JSON.stringify({
-                                                message: "Added a new ticket",
-                                                message2: "A Copy has been sent to the previous tickets table."
-                                            }));
-                                        })
-                                        .catch((err) => { console.log(err); });
-                                })
-                                .catch((err) => {
-                                    console.log(err);
-                                })
-
-
-
-                        })
-                        .catch((err) => {
-                            console.log(err);
-                        });
-
-                }
-            })
-            .catch((err) => {
-                console.log(err);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
-            });
-
-    });
-});
-
+// BUG REPORT: IT SAYS DELETES TICKETS WITH NO ID
 // (MANAGER FEATURE): Delete a pending ticket
 // Delete request for deleting tickets 
 app.delete('/tickets/delete', (req, res) => {
@@ -580,7 +537,7 @@ app.delete('/tickets/delete', (req, res) => {
                 res.end(JSON.stringify({ message: 'No Query' }));
             }
             else {
-                deleteTicketById(requestUrl.id)
+                dao.deleteTicketById(requestUrl.id)
                     .then((data) => {
                         console.log(data);
                         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -588,6 +545,8 @@ app.delete('/tickets/delete', (req, res) => {
                     })
                     .catch((err) => {
                         console.log(err);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'Failed to delete ticket by ID!' }));
                     });
             }
         })
@@ -599,290 +558,63 @@ app.delete('/tickets/delete', (req, res) => {
 
 });
 
+// (MANAGER FEATURE): Update user role
+// PUT request for updating a users role
+app.put('/user/change/role', (req, res) => {
+
+    const requestUrl = req.query;
+    console.log(requestUrl.id);
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        const data = JSON.parse(body);
+
+        const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
+        verifyTokenAndReturnPayload(token)
+            .then((tokenData) => {
+                if (tokenData.role === 'manager') {
+                    if ((data.role == null)) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'It does not have a role property!' }));
+                    }
+                    else if ((data.role == "")) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'You need to type in a role!' }));
+                    }
+                    else if ((data.role == "employee") || (data.role == "manager")) {
+                        dao.updateUserRole(requestUrl.id, data.role).then((updateUserRoleData) => {
+                            console.log(updateUserRoleData);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: `Changed role to ${data.role}.` }));
+                        })
+                            .catch((err) => {
+                                console.log(err);
+                            })
+                    }
+                    else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'The role is not an employee or manager!' }));
+                    }
+
+                }
+                else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: `You are not a manager you are a / an ${tokenData.role}` }));
+                }
+            }).catch((err) => {
+
+            });
+
+    });
+});
+
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
-
-function getAllUsers() {
-    const params = {
-        TableName: 'users'
-    }
-
-    return docClient.scan(params).promise();
-}
-
-function getUsersWithUserName(username) {
-    const params = {
-        TableName: 'users',
-        FilterExpression: '#c = :value',
-        ExpressionAttributeNames: {
-            '#c': 'username'
-        },
-        ExpressionAttributeValues: {
-            ':value': username
-        },
-    }
-
-    return docClient.scan(params).promise();
-}
-
-// getUsersWithPassword("pass1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getUsersWithPassword(password) {
-    const params = {
-        TableName: 'users',
-        FilterExpression: '#c = :value',
-        ExpressionAttributeNames: {
-            '#c': 'password'
-        },
-        ExpressionAttributeValues: {
-            ':value': password
-        },
-    }
-
-    return docClient.scan(params).promise();
-}
-
-// getUsersWithUsernameAndPassword("user1", "pass1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getUsersWithUsernameAndPassword(username, password) {
-    const params = {
-        TableName: 'users',
-        FilterExpression: '#c = :value AND #p = :value2',
-        ExpressionAttributeNames: {
-            '#c': 'username',
-            '#p': 'password'
-
-        },
-        ExpressionAttributeValues: {
-            ':value': username,
-            ':value2': password
-        },
-        limit: 1
-    }
-
-    return docClient.scan(params).promise();
-}
-
-function registerNewUser(user_id, username, password) {
-    const params = {
-        TableName: 'users',
-        Item: {
-            username,
-            password,
-            role: 'employee',
-            user_id
-        }
-    }
-
-    return docClient.put(params).promise();
-}
-
-// updateUserRole("a318eab6-1932-4bb5-b036-1390932b7086", "manager").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function updateUserRole(user_id, newRole) {
-    const params = {
-        TableName: 'users',
-        Key: {
-            user_id
-        },
-        UpdateExpression: 'set #n = :value',
-        ExpressionAttributeNames: {
-            '#n': 'role'
-        },
-        ExpressionAttributeValues: {
-            ':value': newRole
-        }
-    }
-
-    return docClient.update(params).promise();
-}
-
-// getAllTickets().then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getAllTickets() {
-    const params = {
-        TableName: 'tickets'
-    }
-
-    return docClient.scan(params).promise();
-}
-
-function getAllTicketsFromTable(nameOfTable) {
-    const params = {
-        TableName: nameOfTable
-    }
-
-    return docClient.scan(params).promise();
-}
-
-// getTicketByID("53905e0f-2030-4110-bfb8-09a41d237fe1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getTicketByID(ticket_id) {
-    const params = {
-        TableName: 'tickets',
-        Key: {
-            ticket_id
-        }
-    }
-
-    return docClient.get(params).promise();
-}
-
-
-// getTicketsWithID("1e2854ea-7603-4467-a12f-9740d6d2a2c5").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getTicketsWithID(ticket_id) {
-    const params = {
-        TableName: 'tickets',
-        FilterExpression: '#c = :value',
-        ExpressionAttributeNames: {
-            '#c': 'ticket_id'
-        },
-        ExpressionAttributeValues: {
-            ':value': ticket_id,
-        },
-        limit: 1
-    }
-
-    return docClient.scan(params).promise();
-}
-
-function getTicketsWithUsername(username) {
-    const params = {
-        TableName: 'tickets_previous',
-        FilterExpression: '#c = :value',
-        ExpressionAttributeNames: {
-            '#c': 'username'
-        },
-        ExpressionAttributeValues: {
-            ':value': username,
-        },
-    }
-
-    return docClient.scan(params).promise();
-}
-
-
-// getPreviousTicketsWithUsernameAndType("user2", "food").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function getPreviousTicketsWithUsernameAndType(username, type) {
-    const params = {
-        TableName: 'tickets_previous',
-        FilterExpression: '#c = :value AND #p = :value2',
-        ExpressionAttributeNames: {
-            '#c': 'username',
-            '#p': 'type'
-
-        },
-        ExpressionAttributeValues: {
-            ':value': username,
-            ':value2': type
-        },
-    }
-
-    return docClient.scan(params).promise();
-}
-
-// addNewTicket(uuid.v4(), 50.0, "none").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
-
-function addNewTicket(ticket_id, amount, description, username, type) {
-    const params = {
-        TableName: 'tickets',
-        Item: {
-            ticket_id,
-            amount,
-            description,
-            status: 'pending',
-            date: new Date().toLocaleDateString(),
-            username: username,
-            type: type,
-        },
-    }
-
-    return docClient.put(params).promise();
-}
-
-// testItem = {
-//     ticket_id: uuid.v4(),
-//     amount: 0.00,
-//     description: "nada",
-//     status: 'Approved',
-//     date: new Date().toLocaleDateString()
-// }
-
-// moveTicketToTable('tickets_previous', testItem)
-//     .then((data) => { console.log(data); })
-//     .catch((err) => { console.log(err); });
-
-function moveTicketToTable(nameOfTable, itemToAdd) {
-    const params = {
-        TableName: nameOfTable,
-        Item: itemToAdd
-    }
-
-    return docClient.put(params).promise();
-}
-
-// deleteTicketById("53905e0f-2030-4110-bfb8-09a41d237fe1").then((data) => { console.log("ItemDelete"); }).catch((err) => { console.log(err); });
-
-function deleteTicketById(ticket_id) {
-    const params = {
-        TableName: 'tickets',
-        Key: {
-            ticket_id
-        }
-    }
-
-    return docClient.delete(params).promise();
-}
-
-function deleteTicketByIdInTable(nameOfTable, ticket_id) {
-    const params = {
-        TableName: nameOfTable,
-        Key: {
-            ticket_id
-        }
-    }
-
-    return docClient.delete(params).promise();
-}
-
-// console.log(checkForDuplicateUsernames("user3"));
-
-function checkForDuplicateUsernames(username) {
-    result = false;
-
-    let holdingData = getUsersWithUserName(username).then((data) => {
-        console.log(data);
-        // console.log(data.Count);
-        // if (data) {
-        //     console.log("Found a duplicate!");
-        //     result = true;
-        //     return true;
-        // }
-        // else {
-        //     console.log("No duplicate!");
-        //     return false;
-        // }
-    })
-        .catch((err) => {
-            console.log(err);
-        });
-
-    console.log(holdingData);
-
-    return result;
-
-    // array.forEach(element => {
-    //     // console.log(JSON.stringify(element.username) + "V.S." + JSON.stringify(data.username));
-    //     // console.log(JSON.stringify(element.username) == JSON.stringify(data.username));
-    //     if (JSON.stringify(element.username) == JSON.stringify(data.username)) {
-    //         result = true;
-    //     }
-    // });
-
-}
 
 function createJWT(username, role) {
     return jwt.sign({
