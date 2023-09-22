@@ -206,6 +206,8 @@ function getTicketsWithID(ticket_id) {
     return docClient.scan(params).promise();
 }
 
+// 
+
 function deleteTicketByIdInTable(nameOfTable, ticket_id) {
     const params = {
         TableName: nameOfTable,
