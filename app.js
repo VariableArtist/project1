@@ -8,6 +8,7 @@ const url = require('node:url');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const Promise = require('bluebird');
+const { Console } = require('winston/lib/winston/transports');
 
 const port = 3000;
 
@@ -28,12 +29,14 @@ const docClient = new AWS.DynamoDB.DocumentClient();
 // EMPLOYEE FEATURES: 
 // -Make a new ticket
 // -Show an employee's previous tickets
+// -Show an employee's previous tickets by type
 
 // MANAGER FEATURES:
 // -Show all pending tickets
 // -Search and find a specific ticket
 // -Update a pending ticket and post result to the previous ticket table
 // -Delete a ticket 
+// -Update a users role
 
 // (GENERAL FEATURE): Test
 // GET request for testing connection
@@ -104,6 +107,60 @@ app.post('/register', (req, res) => {
                     console.log(err);
                 })
         }
+    });
+});
+
+// (MANAGER FEATURE): Update user role
+// PUT request for updating a users role
+app.put('/user/change/role', (req, res) => {
+
+    const requestUrl = req.query;
+    console.log(requestUrl.id);
+
+    let body = '';
+    req.on('data', (chunk) => {
+        body += chunk;
+    });
+
+    req.on('end', () => {
+        const data = JSON.parse(body);
+
+        const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
+        verifyTokenAndReturnPayload(token)
+            .then((tokenData) => {
+                if (tokenData.role === 'manager') {
+                    if ((data.role == null)) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'It does not have a role property!' }));
+                    }
+                    else if ((data.role == "")) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'You need to type in a role!' }));
+                    }
+                    else if ((data.role == "employee") || (data.role == "manager")) {
+                        updateUserRole(requestUrl.id, data.role).then((updateUserRoleData) => {
+                            console.log(updateUserRoleData);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: `Changed role to ${data.role}.` }));
+                        })
+                            .catch((err) => {
+                                console.log(err);
+                            })
+                    }
+                    else {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'The role is not an employee or manager!' }));
+                    }
+
+                }
+                else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: `You are not a manager you are a / an ${tokenData.role}` }));
+                }
+            }).catch((err) => {
+
+            });
+
     });
 });
 
@@ -224,6 +281,49 @@ app.get('/tickets/previous/employee', (req, res) => {
                 res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
             });
     })
+
+});
+
+// (EMPLOYEE FEATURE): Show an employes's previous tickets by type
+// GET request for showing all previous tickets by type 
+app.get('/tickets/previous/employee/type', (req, res) => {
+
+    const requestUrl = req.query;
+    console.log(requestUrl.type);
+
+    const token = req.headers.authorization.split(' ')[1]; // ['Bearer', '<token>'];
+    verifyTokenAndReturnPayload(token)
+        .then((tokenData) => {
+            console.log(tokenData);
+            console.log(tokenData.username);
+            console.log(requestUrl.type);
+            if (tokenData.role === 'employee') {
+                getPreviousTicketsWithUsernameAndType(tokenData.username, requestUrl.type)
+                    .then((ticketUsernameData) => {
+                        console.log(ticketUsernameData);
+                        if (ticketUsernameData.Count > 0) {
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: "Now displaying previous tickets", ticketUsernameData }));
+                        }
+                        else {
+                            res.writeHead(400, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ message: `Ticket Does not exist` }));
+                        }
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                    });
+            }
+            else {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: `You are not an employee, you are a/an ${tokenData.role}` }));
+            }
+        })
+        .catch((err) => {
+            console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: 'Failed to Authenticate Token!' }));
+        });
 
 });
 
@@ -414,8 +514,13 @@ app.post('/tickets/new', (req, res) => {
                     res.end(JSON.stringify({ message: 'You need to type in an amount and a description' }));
                 }
                 else {
+                    let type = "n/a"
+                    if (data.type != null || data.type != "") {
+                        type = data.type;
+                    }
+
                     const newID = uuid.v4()
-                    addNewTicket(newID, data.amount, data.description, tokenData.username)
+                    addNewTicket(newID, data.amount, data.description, tokenData.username, type)
                         .then((newTicketData) => {
                             newDATA = newTicketData;
                             console.log(newTicketData);
@@ -573,6 +678,26 @@ function registerNewUser(user_id, username, password) {
     return docClient.put(params).promise();
 }
 
+// updateUserRole("a318eab6-1932-4bb5-b036-1390932b7086", "manager").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function updateUserRole(user_id, newRole) {
+    const params = {
+        TableName: 'users',
+        Key: {
+            user_id
+        },
+        UpdateExpression: 'set #n = :value',
+        ExpressionAttributeNames: {
+            '#n': 'role'
+        },
+        ExpressionAttributeValues: {
+            ':value': newRole
+        }
+    }
+
+    return docClient.update(params).promise();
+}
+
 // getAllTickets().then((data) => { console.log(data); }).catch((err) => { console.log(err); });
 
 function getAllTickets() {
@@ -639,9 +764,29 @@ function getTicketsWithUsername(username) {
 }
 
 
+// getPreviousTicketsWithUsernameAndType("user2", "food").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getPreviousTicketsWithUsernameAndType(username, type) {
+    const params = {
+        TableName: 'tickets_previous',
+        FilterExpression: '#c = :value AND #p = :value2',
+        ExpressionAttributeNames: {
+            '#c': 'username',
+            '#p': 'type'
+
+        },
+        ExpressionAttributeValues: {
+            ':value': username,
+            ':value2': type
+        },
+    }
+
+    return docClient.scan(params).promise();
+}
+
 // addNewTicket(uuid.v4(), 50.0, "none").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
 
-function addNewTicket(ticket_id, amount, description, username) {
+function addNewTicket(ticket_id, amount, description, username, type) {
     const params = {
         TableName: 'tickets',
         Item: {
@@ -651,6 +796,7 @@ function addNewTicket(ticket_id, amount, description, username) {
             status: 'pending',
             date: new Date().toLocaleDateString(),
             username: username,
+            type: type,
         },
     }
 
