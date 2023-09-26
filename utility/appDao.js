@@ -6,6 +6,7 @@ AWS.config.update({
 
 const docClient = new AWS.DynamoDB.DocumentClient();
 
+// getAllUsers().then((data) => { console.log(data) }).catch((err) => (console.log(err)));
 
 function getAllUsers() {
     const params = {
@@ -14,6 +15,8 @@ function getAllUsers() {
 
     return docClient.scan(params).promise();
 }
+
+// getUsersWithUserName("user1").then((data) => { console.log(data) }).catch((err) => (console.log(err)));
 
 function getUsersWithUserName(username) {
     const params = {
@@ -28,6 +31,24 @@ function getUsersWithUserName(username) {
     }
 
     return docClient.scan(params).promise();
+}
+
+// getUsersWithUserNameSI("user1").then((data) => { console.log(data) }).catch((err) => (console.log(err)));
+
+function getUsersWithUserNameSI(username) {
+    const params = {
+        TableName: 'users',
+        IndexName: "username-index",
+        KeyConditionExpression: '#c = :value',
+        ExpressionAttributeNames: {
+            '#c': 'username'
+        },
+        ExpressionAttributeValues: {
+            ':value': username
+        }
+    }
+
+    return docClient.query(params).promise();
 }
 
 // getUsersWithPassword("pass1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
@@ -86,7 +107,7 @@ function getUsersWithUsernameAndPassword(username, password) {
 
 function addNewTicket(ticket_id, amount, description, username, type) {
     const params = {
-        TableName: 'tickets',
+        TableName: 'tickets_pending',
         Item: {
             ticket_id,
             amount,
@@ -101,11 +122,11 @@ function addNewTicket(ticket_id, amount, description, username, type) {
     return docClient.put(params).promise();
 }
 
-// getTicketByID("53905e0f-2030-4110-bfb8-09a41d237fe1").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+// getTicketWithID("01cdb5ef-6f82-4fb2-a1f3-427ec58ad6a2").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
 
-function getTicketByID(ticket_id) {
+function getTicketWithID(ticket_id) {
     const params = {
-        TableName: 'tickets',
+        TableName: 'tickets_pending',
         Key: {
             ticket_id
         }
@@ -135,6 +156,7 @@ function moveTicketToTable(nameOfTable, itemToAdd) {
     return docClient.put(params).promise();
 }
 
+
 function getTicketsWithUsername(username) {
     const params = {
         TableName: 'tickets_previous',
@@ -148,6 +170,24 @@ function getTicketsWithUsername(username) {
     }
 
     return docClient.scan(params).promise();
+}
+
+// getTicketsByUserNameSI("user19").then((data) => { console.log(data) }).catch((err) => (console.log(err)));
+
+function getTicketsByUserNameSI(username) {
+    const params = {
+        TableName: 'tickets_previous',
+        IndexName: "username-index",
+        KeyConditionExpression: '#c = :value',
+        ExpressionAttributeNames: {
+            '#c': 'username'
+        },
+        ExpressionAttributeValues: {
+            ':value': username
+        }
+    }
+
+    return docClient.query(params).promise();
 }
 
 // getPreviousTicketsWithUsernameAndType("user2", "food").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
@@ -170,11 +210,32 @@ function getPreviousTicketsWithUsernameAndType(username, type) {
     return docClient.scan(params).promise();
 }
 
+// getPreviousTicketsWithUsernameAndTypeSI("user4", "Japanese").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getPreviousTicketsWithUsernameAndTypeSI(username, type) {
+    const params = {
+        TableName: 'tickets_previous',
+        IndexName: "username-index",
+        KeyConditionExpression: '#c = :value',
+        FilterExpression: '#p = :value2',
+        ExpressionAttributeNames: {
+            '#c': 'username',
+            '#p': 'type'
+        },
+        ExpressionAttributeValues: {
+            ':value': username,
+            ':value2': type
+        },
+    }
+
+    return docClient.query(params).promise();
+}
+
 // getAllTickets().then((data) => { console.log(data); }).catch((err) => { console.log(err); });
 
 function getAllTickets() {
     const params = {
-        TableName: 'tickets'
+        TableName: 'tickets_pending'
     }
 
     return docClient.scan(params).promise();
@@ -188,11 +249,11 @@ function getAllTicketsFromTable(nameOfTable) {
     return docClient.scan(params).promise();
 }
 
-// getTicketsWithID("1e2854ea-7603-4467-a12f-9740d6d2a2c5").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+// getTicketsWithID("01cdb5ef-6f82-4fb2-a1f3-427ec58ad6a2").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
 
 function getTicketsWithID(ticket_id) {
     const params = {
-        TableName: 'tickets',
+        TableName: 'tickets_pending',
         FilterExpression: '#c = :value',
         ExpressionAttributeNames: {
             '#c': 'ticket_id'
@@ -206,7 +267,22 @@ function getTicketsWithID(ticket_id) {
     return docClient.scan(params).promise();
 }
 
-// 
+// getTicketsWithIdQuery("01cdb5ef-6f82-4fb2-a1f3-427ec58ad6a2").then((data) => { console.log(data); }).catch((err) => { console.log(err); });
+
+function getTicketsWithIdQuery(ticket_id) {
+    const params = {
+        TableName: 'tickets_pending',
+        KeyConditionExpression: '#c = :value',
+        ExpressionAttributeNames: {
+            '#c': 'ticket_id',
+        },
+        ExpressionAttributeValues: {
+            ':value': ticket_id,
+        },
+    }
+
+    return docClient.query(params).promise();
+}
 
 function deleteTicketByIdInTable(nameOfTable, ticket_id) {
     const params = {
@@ -223,7 +299,7 @@ function deleteTicketByIdInTable(nameOfTable, ticket_id) {
 
 function deleteTicketById(ticket_id) {
     const params = {
-        TableName: 'tickets',
+        TableName: 'tickets_pending',
         Key: {
             ticket_id
         }
@@ -255,16 +331,20 @@ function updateUserRole(user_id, newRole) {
 module.exports = {
     getAllUsers,
     getUsersWithUserName,
+    getUsersWithUserNameSI,
     registerNewUser,
     getUsersWithUsernameAndPassword,
     addNewTicket,
-    getTicketByID,
+    getTicketWithID: getTicketWithID,
     moveTicketToTable,
     getTicketsWithUsername,
+    getTicketsByUserNameSI,
     getPreviousTicketsWithUsernameAndType,
+    getPreviousTicketsWithUsernameAndTypeSI,
     getAllTickets,
     getAllTicketsFromTable,
     getTicketsWithID,
+    getTicketsWithIdQuery,
     deleteTicketByIdInTable,
     deleteTicketById,
     updateUserRole

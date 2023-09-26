@@ -32,8 +32,8 @@ function validateToken(req, res, next) {
         req.username = payload.username;
         req.role = payload.role;
 
-        console.log(req.username);
-        console.log(req.role);
+        // console.log(req.username);
+        // console.log(req.role);
 
         console.log("TOKEN MIDDLE WARE APPROVED");
         next();
@@ -134,8 +134,11 @@ function validateRole(req, res, next) {
 function validateQuery(req, res, next) {
     const reqQuery = req.query;
 
-    if ((reqQuery == null) || (reqQuery.id == null) || reqQuery.id == "") {
-        return res.status(400).json({ message: 'No Query' });
+    if ((reqQuery.id == null) || (reqQuery == null)) {
+        return res.status(400).json({ message: 'No query id.' });
+    }
+    else if (reqQuery.id == "") {
+        return res.status(400).json({ message: 'You need to type in a query id.' });
     }
     else {
         req.queryId = reqQuery.id;
@@ -152,7 +155,7 @@ function validateTicketStatus(req, res, next) {
         return res.status(400).json({ message: 'It does not have a status property!' });
     }
     else if ((reqBody.status == "")) {
-        return res.status(400).json({ message: 'You need to type in a "approved" or "denied" status!' });
+        return res.status(400).json({ message: 'You need to type in an approved or denied status!' });
     }
     else if ((reqBody.status == "approved") || (reqBody.status == "denied")) {
         req.status = reqBody.status;
@@ -162,7 +165,7 @@ function validateTicketStatus(req, res, next) {
 
     }
     else {
-        return res.status(400).json({ message: 'The status is not "approved" or "denied"!' });
+        return res.status(400).json({ message: 'The status is not approved or denied!' });
     }
 }
 

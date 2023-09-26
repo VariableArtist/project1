@@ -44,6 +44,7 @@ app.use(bodyParser.json());
 // -Search and find a specific ticket
 // -Update a pending ticket and post result to the previous ticket table
 // -Delete a ticket 
+// -Get user by username
 // -Update a users role
 
 // --------------------------------------------------------------------------
@@ -60,14 +61,14 @@ app.get('/', (req, res) => {
 app.get('/users', (req, res) => {
     dao.getAllUsers()
         .then((data) => {
-            console.log(data);
+            // console.log(data);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Now displaying users", data }));
+            res.end(JSON.stringify({ message: "Now displaying users.", data }));
         })
         .catch((err) => {
             console.log(err);
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Failed to Retruve Users.", data }));
+            res.end(JSON.stringify({ message: "Failed to retrieve users.", data }));
         });
 });
 
@@ -78,22 +79,24 @@ app.post('/register', util.validateUsernameAndPassword, (req, res) => {
     // console.log(req.username);
     // console.log(req.password);
 
-    dao.getUsersWithUserName(req.username).then((userNameData) => {
+    dao.getUsersWithUserNameSI(req.username).then((userNameData) => {
         if (userNameData.Count == 0) {
             dao.registerNewUser(uuid.v4(), req.username, req.password)
                 .then((newUserData) => {
-                    console.log("Made New User!");
-                    console.log(newUserData);
+                    // console.log("Made New User!");
+                    // console.log(newUserData);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ message: "Added a new user!" }));
+                    res.end(JSON.stringify({ message: "Registered a new user." }));
                 })
                 .catch((err) => {
                     console.log(err);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: "Failed to register new users.", data }));
                 });
         }
         else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "User Already Exists!" }));
+            res.end(JSON.stringify({ message: "User already exists." }));
         }
     })
         .catch((err) => {
@@ -108,24 +111,33 @@ app.post('/register', util.validateUsernameAndPassword, (req, res) => {
 // POST request for logging in 
 app.post('/login', util.validateUsernameAndPassword, (req, res) => {
 
-    dao.getUsersWithUsernameAndPassword(req.username, req.password)
+    dao.getUsersWithUserNameSI(req.username, req.password)
         .then((userNameData) => {
-            console.log(userNameData);
+            // console.log(userNameData);
             if (userNameData.Count > 0) {
-                console.log(userNameData.Items[0].username);
-                console.log(userNameData.Items[0].role);
+                // console.log(userNameData.Items[0].username);
+                // console.log(userNameData.Items[0].role);
 
-                const token = util.createJWT(userNameData.Items[0].username, userNameData.Items[0].role)
-                res.writeHead(200, { 'Content-Type': 'application/json', 'User-Logged-In': `${userNameData.Items[0].username}`, 'Role': `${userNameData.Items[0].role}` });
-                res.end(JSON.stringify({ message: "Successfully Authenticated, Welcome User", role: userNameData.Items[0].role, token: token }));
+                if (userNameData.Items[0].password == req.password) {
+                    const token = util.createJWT(userNameData.Items[0].username, userNameData.Items[0].role)
+                    res.writeHead(200, { 'Content-Type': 'application/json', 'User-Logged-In': `${userNameData.Items[0].username}`, 'Role': `${userNameData.Items[0].role}` });
+                    res.end(JSON.stringify({ message: "Successfully Authenticated, Welcome User", role: userNameData.Items[0].role, token: token }));
+                }
+                else {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: "User with that password does not exist" }));
+                }
+
             }
             else {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "User with that password does not exist" }));
+                res.end(JSON.stringify({ message: "User does not exist" }));
             }
         })
         .catch((err) => {
             console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: "Failed to get users." }));
         });
 });
 
@@ -135,7 +147,7 @@ app.post('/tickets/new', util.validateToken, util.validateEmployee, util.validat
     let data = req.body;
 
     let type = "n/a"
-    if (data.type != null || data.type != "") {
+    if (data.type != null && data.type != "") {
         type = data.type;
     }
 
@@ -146,12 +158,12 @@ app.post('/tickets/new', util.validateToken, util.validateEmployee, util.validat
             // console.log(newTicketData);
             // console.log("New ticket created!");
 
-            dao.getTicketByID(newID)
+            dao.getTicketWithID(newID)
                 .then((getTicketByIDdata) => {
                     // console.log(getTicketByIDdata)
                     dao.moveTicketToTable('tickets_previous', getTicketByIDdata.Item)
                         .then((moveTicketToTableData) => {
-                            console.log(moveTicketToTableData);
+                            // console.log(moveTicketToTableData);
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify({
                                 message: "Added a new ticket",
@@ -176,55 +188,39 @@ app.post('/tickets/new', util.validateToken, util.validateEmployee, util.validat
 // (EMPLOYEE FEATURE): Show an employee's previous tickets
 // GET request for showing all previous tickets 
 app.get('/tickets/previous/employee', util.validateToken, util.validateEmployee, (req, res) => {
-    dao.getTicketsWithUsername(req.username)
+    dao.getTicketsByUserNameSI(req.username)
         .then((ticketUsernameData) => {
-            console.log(ticketUsernameData);
+            // console.log(ticketUsernameData);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Now displaying previous tickets", ticketUsernameData }));
+            res.end(JSON.stringify({ message: "Now displaying previous tickets", tickets: ticketUsernameData }));
         })
         .catch((err) => {
             console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: "Failed to get tickets with requested username.", ticketUsernameData }));
         });
 
 });
 
 // (EMPLOYEE FEATURE): Show an employes's previous tickets by type
 // GET request for showing all previous tickets by type 
-app.get('/tickets/previous/employee/type', util.validateToken, util.validateEmployee, (req, res) => {
-    const requestUrl = req.query;
-    // console.log(requestUrl.type);
-    dao.getPreviousTicketsWithUsernameAndType(req.username, requestUrl.type)
+app.get('/tickets/previous/employee/type/', util.validateToken, util.validateEmployee, util.validateQuery, (req, res) => {
+    dao.getPreviousTicketsWithUsernameAndTypeSI(req.username, req.queryId)
         .then((ticketUsernameData) => {
-            console.log(ticketUsernameData);
+            // console.log(ticketUsernameData);
             if (ticketUsernameData.Count > 0) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Now displaying previous tickets", ticketUsernameData }));
+                res.end(JSON.stringify({ message: "Now displaying employee's previous tickets by type.", ticketUsernameData }));
             }
             else {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: `User has no tickets with that type` }));
+                res.end(JSON.stringify({ message: `Employee has no tickets with that type.` }));
             }
         })
         .catch((err) => {
             console.log(err);
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: `Ticket Does not exist` }));
-        });
-
-});
-
-// (MANGAER FEATURE): Show all pending tickets
-// GET request for showing all the tickets 
-app.get('/tickets/show', util.validateToken, util.validateManager, (req, res) => {
-
-    dao.getAllTickets()
-        .then((data) => {
-            console.log(data);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Now displaying current tickets", data }));
-        })
-        .catch((err) => {
-            console.log(err);
+            res.end(JSON.stringify({ message: `Ticket Does not exist.` }));
         });
 
 });
@@ -234,25 +230,45 @@ app.get('/tickets/previous/all', util.validateToken, util.validateManager, (req,
 
     dao.getAllTicketsFromTable('tickets_previous')
         .then((data) => {
-            console.log(data);
+            // console.log(data);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Now displaying previous tickets", data }));
+            res.end(JSON.stringify({ message: "Now displaying previous tickets.", data }));
         })
         .catch((err) => {
             console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: `Failed to get tickets from tickets_previous table.` }));
+        });
+
+});
+
+// (MANGAER FEATURE): Show all pending tickets
+// GET request for showing all the tickets 
+app.get('/tickets/pending/all', util.validateToken, util.validateManager, (req, res) => {
+
+    dao.getAllTickets()
+        .then((data) => {
+            // console.log(data);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: "Now displaying pending tickets.", data }));
+        })
+        .catch((err) => {
+            console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: `Failed to get tickets from tickets_pending table.` }));
         });
 
 });
 
 // (MANAGER FEATURE): Search and find a specific ticket
 // GET request for showing a specific ticket 
-app.get('/tickets/find', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
-    dao.getTicketsWithID(req.queryId)
+app.get('/tickets/pending/find/', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
+    dao.getTicketsWithIdQuery(req.queryId)
         .then((getTicketByIDdata) => {
-            console.log(getTicketByIDdata);
+            // console.log(getTicketByIDdata);
             if (getTicketByIDdata.Count > 0) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Now displaying ticket", getTicketByIDdata }));
+                res.end(JSON.stringify({ message: "Now displaying ticket", ticket: getTicketByIDdata.Items[0] }));
             }
             else {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -269,9 +285,9 @@ app.get('/tickets/find', util.validateToken, util.validateManager, util.validate
 // (MANAGER FEATURE): Update a pending ticket and post result to the previous ticket table
 // put request for adding new tickets to the approve denied table 
 // and deleting the coresponding ticket in the pending table 
-app.put('/tickets/update', util.validateToken, util.validateManager, util.validateQuery, util.validateTicketStatus, (req, res) => {
+app.put('/tickets/pending/update/', util.validateToken, util.validateManager, util.validateQuery, util.validateTicketStatus, (req, res) => {
 
-    dao.getTicketsWithID(req.queryId)
+    dao.getTicketsWithIdQuery(req.queryId)
         .then((getTicketWithIDdata) => {
             if (getTicketWithIDdata.Count > 0) {
                 console.log(getTicketWithIDdata)
@@ -295,7 +311,7 @@ app.put('/tickets/update', util.validateToken, util.validateManager, util.valida
                     .catch((err) => { console.log(err); });
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Now updating ticket", getTicketWithIDdata }));
+                res.end(JSON.stringify({ message: "Now updating ticket", ticket: getTicketWithIDdata.Items[0] }));
 
             }
             else {
@@ -311,26 +327,63 @@ app.put('/tickets/update', util.validateToken, util.validateManager, util.valida
 
 });
 
-// BUG REPORT: IT SAYS DELETES TICKETS WITH NO ID
 // (MANAGER FEATURE): Delete a pending ticket
 // Delete request for deleting tickets 
-app.delete('/tickets/delete', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
-    dao.deleteTicketById(req.queryId)
-        .then((data) => {
-            console.log(data);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: "Deleted Ticket" }));
+app.delete('/tickets/pending/delete/', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
+
+    dao.getTicketsWithIdQuery(req.queryId)
+        .then((getTicketByIDdata) => {
+            if (getTicketByIDdata.Count > 0) {
+                dao.deleteTicketById(req.queryId)
+                    .then((data) => {
+                        // console.log(data);
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: "Deleted Ticket" }));
+                    })
+                    .catch((err) => {
+                        console.log(err);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: 'Failed to delete ticket by ID!' }));
+                    });
+            }
+            else {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: `Ticket Does not exist` }));
+            }
         })
         .catch((err) => {
             console.log(err);
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: 'Failed to delete ticket by ID!' }));
+            res.end(JSON.stringify({ message: `Failed to find ticket(s) with ID` }));
+        })
+
+});
+
+// (MANAGER FEATURE): Get user by username
+// GET request for retrieving a user by username
+app.get('/users/find/', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
+    dao.getUsersWithUserNameSI(req.queryId)
+        .then((getUsersWithUserNameData) => {
+            // console.log(getTicketByIDdata);
+            if (getUsersWithUserNameData.Count > 0) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: "Now displaying user with username", getUsersWithUserNameData: getUsersWithUserNameData }));
+            }
+            else {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: `User does not exist` }));
+            }
+        })
+        .catch((err) => {
+            console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: `Failed to find user with username` }));
         });
 });
 
 // (MANAGER FEATURE): Update user role
 // PUT request for updating a users role
-app.put('/user/change/role', util.validateToken, util.validateManager, util.validateQuery, util.validateRole, (req, res) => {
+app.put('/user/change/role/', util.validateToken, util.validateManager, util.validateQuery, util.validateRole, (req, res) => {
 
 
     dao.updateUserRole(req.queryId, req.roleToAssign).then((updateUserRoleData) => {
@@ -340,6 +393,8 @@ app.put('/user/change/role', util.validateToken, util.validateManager, util.vali
     })
         .catch((err) => {
             console.log(err);
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ message: `Failed to change users role.` }));
         })
 
 });
