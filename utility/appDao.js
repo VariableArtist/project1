@@ -328,6 +328,7 @@ function updateUserRole(user_id, newRole) {
     return docClient.update(params).promise();
 }
 
+
 module.exports = {
     getAllUsers,
     getUsersWithUserName,
@@ -335,7 +336,7 @@ module.exports = {
     registerNewUser,
     getUsersWithUsernameAndPassword,
     addNewTicket,
-    getTicketWithID: getTicketWithID,
+    getTicketWithID,
     moveTicketToTable,
     getTicketsWithUsername,
     getTicketsByUserNameSI,

@@ -39,10 +39,10 @@ app.use(bodyParser.json());
 // -Show an employee's previous tickets by type
 
 // MANAGER FEATURES:
-// -Show all pending tickets
 // -Show all previous tickets
-// -Search and find a specific ticket
+// -Show all pending tickets
 // -Update a pending ticket and post result to the previous ticket table
+// -Search and find a specific ticket
 // -Delete a ticket 
 // -Get user by username
 // -Update a users role
@@ -290,24 +290,32 @@ app.put('/tickets/pending/update/', util.validateToken, util.validateManager, ut
     dao.getTicketsWithIdQuery(req.queryId)
         .then((getTicketWithIDdata) => {
             if (getTicketWithIDdata.Count > 0) {
-                console.log(getTicketWithIDdata)
+                // console.log(getTicketWithIDdata)
 
                 getTicketWithIDdata.Items[0].status = req.status;
 
                 dao.moveTicketToTable('tickets_approved_denied', getTicketWithIDdata.Items[0])
-                    .then((data) => { console.log(data); })
+                    .then((data) => {
+                        // console.log(data);
+                    })
                     .catch((err) => { console.log(err); });
 
                 dao.deleteTicketByIdInTable('tickets_previous', req.queryId)
-                    .then((data) => { console.log(data); })
+                    .then((data) => {
+                        // console.log(data);
+                    })
                     .catch((err) => { console.log(err); });
 
                 dao.moveTicketToTable('tickets_previous', getTicketWithIDdata.Items[0])
-                    .then((data) => { console.log(data); })
+                    .then((data) => {
+                        // console.log(data);
+                    })
                     .catch((err) => { console.log(err); });
 
                 dao.deleteTicketById(req.queryId)
-                    .then((data) => { console.log(data); })
+                    .then((data) => {
+                        // console.log(data);
+                    })
                     .catch((err) => { console.log(err); });
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -332,13 +340,22 @@ app.put('/tickets/pending/update/', util.validateToken, util.validateManager, ut
 app.delete('/tickets/pending/delete/', util.validateToken, util.validateManager, util.validateQuery, (req, res) => {
 
     dao.getTicketsWithIdQuery(req.queryId)
-        .then((getTicketByIDdata) => {
-            if (getTicketByIDdata.Count > 0) {
-                dao.deleteTicketById(req.queryId)
+        .then((getTicketWithIDdata) => {
+            if (getTicketWithIDdata.Count > 0) {
+
+                getTicketWithIDdata.Items[0].status = "denied";
+
+                dao.moveTicketToTable('tickets_previous', getTicketWithIDdata.Items[0])
+                    .then((data) => {
+                        // console.log(data);
+                    })
+                    .catch((err) => { console.log(err); });
+
+                dao.deleteTicketByIdInTable('tickets_pending', req.queryId)
                     .then((data) => {
                         // console.log(data);
                         res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ message: "Deleted Ticket" }));
+                        res.end(JSON.stringify({ message: "Deleted Ticket", ticket: getTicketWithIDdata.Items[0] }));
                     })
                     .catch((err) => {
                         console.log(err);
@@ -367,7 +384,7 @@ app.get('/users/find/', util.validateToken, util.validateManager, util.validateQ
             // console.log(getTicketByIDdata);
             if (getUsersWithUserNameData.Count > 0) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ message: "Now displaying user with username", getUsersWithUserNameData: getUsersWithUserNameData }));
+                res.end(JSON.stringify({ message: "Now displaying user with username", getUsersWithUserNameData: getUsersWithUserNameData.Items[0] }));
             }
             else {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -385,17 +402,33 @@ app.get('/users/find/', util.validateToken, util.validateManager, util.validateQ
 // PUT request for updating a users role
 app.put('/user/change/role/', util.validateToken, util.validateManager, util.validateQuery, util.validateRole, (req, res) => {
 
-
-    dao.updateUserRole(req.queryId, req.roleToAssign).then((updateUserRoleData) => {
-        console.log(updateUserRoleData);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: `Changed role to ${req.roleToAssign}.` }));
-    })
+    dao.getUsersWithUserNameSI(req.queryId)
+        .then((getUsersWithUserNameData) => {
+            // console.log(getTicketByIDdata);
+            if (getUsersWithUserNameData.Count > 0) {
+                dao.updateUserRole(getUsersWithUserNameData.Items[0].user_id, req.roleToAssign).then((updateUserRoleData) => {
+                    // console.log(updateUserRoleData);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: `Changed role to ${req.roleToAssign}.` }));
+                })
+                    .catch((err) => {
+                        console.log(err);
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ message: `Failed to change users role.` }));
+                    })
+            }
+            else {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ message: `User does not exist` }));
+            }
+        })
         .catch((err) => {
             console.log(err);
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ message: `Failed to change users role.` }));
-        })
+            res.end(JSON.stringify({ message: `Failed to find user with username` }));
+        });
+
+
 
 });
 
